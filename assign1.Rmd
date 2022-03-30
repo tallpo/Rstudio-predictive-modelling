@@ -1,0 +1,430 @@
+---
+title: "Assignment1 Report"
+author: "Jianing Yu 49005672"
+date: "USYD|DATA2002|13 September 2021"
+output:
+  rmdformats::readthedown:
+    self_contained: true
+    thumbnails: true
+    lightbox: true
+    gallery: false
+    code_folding: hide
+    theme: cosmo
+    highlight: tango
+---
+
+```{r setup, include=TRUE, message = FALSE, echo=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+library(readr)
+library(tidyverse)
+library(ggplot2)
+library(janitor)
+library(skimr)
+library(visdat)
+library(pander)
+library(broom)
+library(ggpubr)
+library(knitr)
+```
+
+# Introduction and Data Information
+## Introduction
+The report represent the survey data of the students who have taken DATA2002 in the second semester of 2021. After asking 20 questions, we have know some aspects of the students, such as whether they have been vaccinated, their living habits, and their sense about the difficulty of this course. Considering of survey background and bias like selection bias and non-response bias, after cleaned up some variables column that are used in the data like height, the hours of exercising and the difficulty degree of learning the course, the report shows some relationship between them and observe the insight.
+
+## Data Cleaning
+The survey involves 20 questions that containing both numerical and categorical variables. At first the csv file was stored into dataframe, and change each column name to be shorter, for next convenience of operating, just clean the necessary columns that are used in calculating the distribution and analyzing the question, for some variables that didn't process cleaning may have some potential aspects should be consider in data discussion part.
+
+```{r message=FALSE}
+url = "https://docs.google.com/spreadsheets/d/1-DmA1UUM6QmZyucYiutuZX4Q0omtSCDwSOCNzHibkto/export?format=csv"
+survey = readr::read_csv(url)
+
+questions = colnames(survey)
+short_names = c("time","covid_tests","living_arrangements","height",
+                "wednesday","in_aus","math_ability","r_ability",
+                "data2002","year","webcam","vaccination","social_media",
+                "gender","steak_preference","dominant_hand","stress",
+                "lonely","emails","sign_off","salary","unit","major","exercise")
+colnames(survey) = short_names
+```
+  1. The unit of *height* was not uniform in the survey. Most of students used **centimeter** as the unit, but some of them used **meter** and there is the dot between the number. The ones recorded in **meter** are converted into **centimeter** here, and also removed the units in some values,The distribution of heights is visualized below.
+  2. In gender parts, the participants write in different styles like writing the capital letter **F** or **M**, or representing in different ways like **Man** and **Woman**, it also has spelling errors and other potential mistake to attend.
+  3.Furthermore, removing some obvious missing values that almost didn't finish, aiming at *year* that even participants didn't choose, this relate to other column values a lot.
+  4.Choosing the value that will be used to do the question and distribution, like scaling factors and exercising hours, the NA values might be converted to 0 that easy to analyze.
+  5.In favourite social media aspects,there might be lots of answer that are not specified, then just retain the first listed value to solve the inconsistent value.
+
+However, there were some columns were not cleaned:
+  1. About guessing the data scientist salary, it exist some bias and personal thoughts that people write in different styles and different units, can't distinguish in hour or in month or in a year. Also it didn't used in the distribution problem, so it's not necessary.
+  2. In signing-off column, since writing in different categorical value and also didn't considered in analyzing, just cleaning the needful factors.
+
+```{r, warning==FALSE, fig.height=3,fig.cap="The barplot of the student's height after data cleaning"}
+#Converting factor types 
+d2002_levels = c("Easy", "Standard" ,"Difficult")
+r_levels = 0:10
+math_levels = 0:10
+stress_levels = 0:10
+year_levels = c("First year","Second year","Third year")
+
+survey = survey %>% 
+  mutate(year = word(year, 1,2)) %>%
+  mutate(year = factor(year, levels = year_levels))
+
+survey = survey %>%
+  mutate(data2002 = factor(data2002, levels = d2002_levels),
+         r_ability = factor(r_ability, levels = r_levels),
+         stress = factor(stress, levels = stress_levels), 
+         math_ability = factor(math_ability, levels = math_levels),
+         )
+#Cleaning the height
+survey = survey %>% 
+  dplyr::mutate(
+    height_clean = readr::parse_number(height),
+    height_clean = case_when(
+      height_clean <= 2.5 ~ height_clean * 100,
+      height_clean <= 9 ~ NA_real_,
+      TRUE ~ height_clean
+    )
+  )
+x1 = survey %>% select(height_clean)
+x2 = survey %>% pull(height_clean)
+
+survey %>% 
+  ggplot() + 
+  aes(x = height_clean) + 
+  geom_histogram(binwidth = 5)
+
+h = survey %>% pull(height_clean) %>% sort(decreasing = FALSE)
+
+o = survey %>% 
+  # filter(unit =="DATA2002") %>%
+  group_by(unit) %>% 
+  summarise(
+    mean_height = mean(height_clean, na.rm = TRUE),
+    sd_height = sd(height_clean, na.rm = TRUE),
+    n = sum(!is.na(height_clean)),
+    total_exercise_hours = sum(exercise,na.rm = TRUE),
+    mean_exercise_hours = mean(exercise,na.rm = TRUE)
+  )
+
+#Cleaning gender
+t = survey %>% janitor:: tabyl(gender)
+survey = survey %>% 
+  mutate(
+    gender = case_when(
+      gender == "Woman/Female" ~ "Female",
+      TRUE ~ gender
+    ),
+    gender_clean = gendercoder::recode_gender(gender))
+g = survey %>% janitor::tabyl(gender,gender_clean)
+
+#Cleaning the social media platform
+survey = survey %>% 
+  mutate(social_media = word(social_media, 1)) %>%
+  mutate(social_media = case_when(substring(social_media, 1,3) == "ins" ~ "instagram",
+                                  substring(social_media, 1,3) == "tik" ~ "tiktok",
+                                  substring(social_media, 1,6) == "wechat" ~ "wechat",
+                                  substring(social_media, 1,1) == "n" ~ as.character(NA),
+                                  TRUE ~ social_media)
+                                                                  )
+
+```
+
+## Data Discussion
+### 1. Is this a random sample of DATA2X02 students?
+In fact, due to it's not mandatory for every student to do it, it is voluntary participation, it cannot be shown as random sample that representing DATA2X02 students. If 100 students are randomly selected from more than 500 students to do it forcibly, it can be called as a random sample, so this survey data may have some deviations such as non-response bias and measurement bias.
+
+### 2.What are the potential biases? Which variables are most likely to be subjected to this bias?
+**Sampling bias**:
+  Due to different study background, students who always interacting on Ed may occupy more proportions, and there might be some students who were busy at that time and didn't mention on it. Even students who answer the questions, it might have some questions are not their real thought, such the times of taking the vaccinated test and cooking steak habits, they might feel private and uncomfrortable to tell the truth, and these are affected by excluded environmental factors.
+  
+**Measurment bias**:
+  The participants would answer some questions that are popular in social region, but it might not be true, and this question just be the potential issues because the participants are student, such as exercising hours that is easy affected by math ability or r ability, also the height values, if they just want to appear the social demand.
+  
+### 3. Which questions needed improvement to generate useful data (e.g. in terms of the way the question was phrased or response validation)?
+In the survey, it's best if questions can be given a very selective or controllable range of answers, so student can easy to choose and the data processor can have better management, if the participants fill in by themselves, the answers will be more diversified and various, such as the sign-off questions, there are lots of answers that are hard to clean and analyze. In addition, if the questions can be more rigorous, the answer will be much clearer, such as asking the salary of a data scientist, it would be better if you can give a unit of time, then students will clearly distinguish if use in year or in month. In general, these issues need more improvement, but it doesn't influence the report analyzing.
+
+# General Question
+## 1. Does the number of COVID tests a student has taken in the past two months follow a Poisson distribution?
+According to the number of test is the discrete value, I will use the **chi-squared test** to test whether COVID tests follow the Poisson distribution or not, the **chi-squared test** can verify the discrete distribution.
+
+In Poisson distribution, we should calculate the $\lambda$ value to show the average result for each individual. At first we calculate $n = 208$, and we use $sum(y) = 214$ to use the formula $\lambda = \bar{x} = 214/208 = 1.029$, in Figure 1.1, we can gather the gray stack explain the real count number, and the blue line shows the expected counts, it obviously see the trend of decreasing, people who didn't take the COVID test occupy the big proportion.
+```{r fig.height=3, fig.cap="Figure 1.1: The barplot of covid tests of observed value and the blue line of expected value"}
+y = data.frame(survey$covid_tests) %>% drop_na()
+colnames(y) = c('covid_tests')
+n = nrow(y) # sample size
+
+covid_counts = y %>% 
+  group_by(covid_tests) %>% 
+  summarise(count = n())
+v = nrow(covid_counts)
+
+covid_counts[nrow(covid_counts) + 1,] = list(9,0)
+
+lam = sum(y)/n
+z = 0:10
+p = dpois(z, lambda = lam)
+
+ey = (n * p)
+b = ey >= 5
+
+count = covid_counts$count
+yr = c(count[1:3], sum(count[4:nrow(covid_counts)]))
+pr = c(p[1:3], sum(p[4:11]))
+eyr = pr * n 
+
+# plot chart
+pois <- as.data.frame(dpois(0:10, lambda = lam) * 208)
+
+df <- data.frame(covid_counts, pois)
+colnames(df) <- (c("Tests_done","Observed_counts", "Poisson_counts"))
+
+ggplot(df, aes(x = Tests_done, y = Observed_counts)) + geom_col(alpha = 0.8) +
+  geom_point(data = df, aes(x = Tests_done, y = Poisson_counts), alpha = 0.3, color = "blue") +
+  geom_line(data = df, aes(x = Tests_done, y = Poisson_counts),  alpha = 0.3, color = "blue") +
+  ylab("Counts") + xlab("Covid tests done") +
+  scale_x_continuous(breaks = 0:10)
+```
+Then let's look at the Table 1.1 about the true value and the expected value:
+```{r fig.height=3, fig.cap="Table 1.1 The expected and observed values for all the categorical numbers"}
+df = df %>% arrange(Tests_done)
+df = df %>% mutate(Tests_done = as.character(Tests_done), Poisson_counts = round(Poisson_counts, 5))
+
+colnames(df) <- c("Covid tests time", "Observed values","Expected values")
+knitr::kable(df, caption = "Expected and observed values for number of people to have completed COVID tests.")
+```
+**Hypothesis**: 
+
+$H_0:$ the number of COVID tests in past two months follow a Poisson distribution.
+
+$H_1:$ the number of COVID tests in past two months does not follow a Poisson distribution.
+
+**Assumptions**: Each individuals COVID test are independent for other tests.
+First we should find the expected frequencies $e_i = np_i \geq 5$ that more and equal than 5, then we use $Boolean$ function found that after 3 index are all $False$, so we can combine these together into a new category $\geq 3$, then we can gather the new table in Table 1.2:
+```{r fig.height=3, fig.cap="Table 1.2: The merged observed and expected value that the expected value are not bigger than 5"}
+tests <- c("0", "1","2","≥ 3")
+m = matrix(c(eyr, yr), nrow = 4, ncol = 2, byrow = FALSE)
+df = data.frame(tests, m)
+
+df = df[, c(1, 3, 2)]
+colnames(df) <- c("Covid tests done", "Observed value","Expected value")
+knitr::kable(df, caption = "Merged expected and observed values for number of people to have completed COVID tests.")
+```
+**Test statistic**:$$T = \sum_{i=1}^{3} \frac{(Y_i - np_i)^2}{np_i}$$
+Under $H_0$, $T \sim \chi_{1}^{2}$ approximately.
+```{r}
+eyr = pr * n
+kr = length(yr)
+t0 = sum((yr - eyr)^2/eyr)
+t0
+```
+**Observed test statistic**: $$t_0 = \sum_{i=1}^{3} \frac{(y_i - np_i)^2}{np_i} = `r t0` \approx `r round(t0, 3)` = 70.91$$
+
+**P-value**: 
+$$P(T \geq t_0) = P(\chi_{2}^{2} \geq 70.91) = 4.009781*10^{-16}$$
+```{r}
+pvale = pchisq(t0, df = kr - 1 - 1, lower.tail = FALSE)
+pvale
+chisq.test(yr, p = pr)# df = 2, calculate t0
+```
+**Decision**: After calculating, the p-value is less than 0.05. We against $H_0$ at the 5% significance level of the alternative hypothesis, then we can explain that the number of COVID tests a student has taken in the past two months does not follow a Poisson distribution that can be as $H_1$.
+
+# Specific Question 1
+## Hypothesis Test 1 - Does the student studying in different year influence the complexity of learning DATA2002?
+
+**Reason of testing**: According to Figure 2, I'm curious about whether people studying in different year would influence studying the course or not, maybe student in higher study-level think the course is easier.
+
+```{r fig.height=4, fig.cap= "Figure 2: The stacked barplot determines the proportion of students in different study year and complexity"}
+de <- data.frame(table(survey$data2002, survey$year))
+names(de) <- c("Data2002","StudyYear","Count")
+
+ggplot(data=de, aes(x=Data2002, y=Count, fill=StudyYear)) + theme_minimal()+ geom_bar(position="fill", stat="identity") + theme(axis.text.x = element_text(angle = 45), legend.position = 'bottom') + labs(x = "Difficulty degree of Data2002", y= "Students Study Year", fill='') 
+```
+
+
+### Independence Test
+I think using the independence in Chi-squered test is better to proof whether student study in different year influences student's complexity of studying DATA2002. This is one sample originally so that we can't determine it into homogeneity test, just use one sample then separating into three years.
+
+**Hypothesis**: 
+
+$H_0:$ the probability of complexity and the probability of study years are independent.
+
+$H_1:$ the probability of complexity and the probability of study years are not independent.
+
+**Assumptions**: 
+Finding the expected frequencies $e_i = np_i \geq 5$ that more and equal than 5 as the test I did before, then we can gather the new table in Table 2.1, we find that not all expected values are bigger than 5, so the assumption is not establish:
+
+```{r fig.height=3, fig.cap= "Table 2.1: Expected values in Chi-squared test for independence"}
+com_table = table(survey$data2002, survey$year)
+r = c = 3
+cr = apply(com_table, 1, sum)
+cc = apply(com_table, 2, sum)
+cr.mat = matrix(cr, r, c, byrow = FALSE)
+cc.mat = matrix(cc, r, c, byrow = TRUE)
+ec.mat = cr.mat * cc.mat / sum(com_table)
+colnames(ec.mat) <- c("First year", "Second year","Third year")
+rownames(ec.mat) <- c("Easy", "Standard", "Difficult")
+knitr::kable(ec.mat, caption = "Expected values for student study in different levels and the complexity for DATA2002")
+```
+
+**Test statistic**:$$T = \sum_{i=1}^{r} \sum_{j=1}^{c}\frac{(y_{ij} - e_{ij})^2}{e_{ij}}$$
+Under $H_0$, $T \sim \chi_{4}^{2}$ approximately.
+
+**Observed test statistic**: $$t_0 = \sum_{i=1}^{r} \sum_{j=1}^{c}\frac{(y_{ij} - y_i.y._j/n)^2}{y_i.y._j/n} = 9.324$$
+```{r}
+t0 = sum((com_table - ec.mat)^2 / ec.mat)
+t0
+```
+
+**P-value**: 
+$$P(T \geq t_0) = P(\chi_{(r-1)(c-1)}^{2} \geq t_0 = 0.0534$$
+```{r}
+pvalu = pchisq(t0, (r - 1) * (c - 1), lower.tail=FALSE)
+chisq.test(com_table, correct = FALSE)
+```
+**Decision**: We calculate the p-value is 0.0534 which is bigger than 0.05, so we can retain the $H_0$ at the 5% significance level, then we can conclude that the student who study in different years are independent with compexity in DATA2002.
+
+# Specific Question 2
+## Hypothesis Test 2 - Do the student participate in sufficient regular physical activity with data by Australian Department of Health 2017b for 18-64 years old?
+
+**Reason of testing**: I wonder besides studying, if students achieved the regular amount of exercise hours that recommended by Australian department, from the official data, it's better to have 150 to 300 minutes (2½ to 5 hours) of moderate intensity physical activity or 75 to 150 minutes (1 ¼ to 2 ½ hours) of vigorous intensity physical activity, then I combined the minimum of these two types equivalently, just hope most of students may have the healthy life, we can analyze in Figure 3.
+
+```{r fig.height= 3, fig.cap="Figure 3: the boxplot perform the hours of exercise"}
+ex = data.frame(survey$exercise) %>% drop_na()
+ex = subset(ex,survey.exercise < 10)
+p1 = ggplot(ex, aes(x = "", y = ex$survey.exercise, fill = "")) + geom_boxplot(alpha = 0.5, coef = 10) + geom_hline(yintercept = 3.75, colour = "blue", linetype = "dashed") + labs(y = "Hours of exercise"
+, x = "") + theme_bw(base_size = 10) + theme(axis.ticks.x = element_blank(), axis.text.x = element_blank(),legend.position="none")
+p1
+```
+### One Sample t-test
+According to the survey is the one sample data initially that I didn't distinguish into different genders, using **One Sample t-test** was better to answer the question and analyze whether students are achieved the $\mu = 3.75$ that was sufficient in exercise. In the original, it has the outlier of 80 exercise hours, because it influences the plot deeply, I removed the excection and see the normal boxplot.
+
+**Hypothesis**: 
+
+$H_0:$ the mean of sample size is equal to the mean in standard value.
+
+$H_1:$ the mean of sample size is not equal to the mean in standard value, or the mean of sample size is smaller than the mean of standard value, or the mean of sample size is bigger than the mean of standard value,
+
+**Assumptions**: We assume the sample has $X_1$,$X_2$,$...$,$X_i$ of the size n, and each sample was chosen randomly from the population, then random variables are independently and identically distributed, we can gather the unknown variance $\sigma^2$ to see whether following the normal distribution.
+
+**Test statistic**:$$T = \frac{\bar{X} - \mu_0}{S/\sqrt{n}}$$. Under $H_0$, $T \sim t_{n-1}$.
+We should calculate the mean of sample size and standard deviation at first, then we get the $\mu=3.53$ and $S = 2.39$:
+```{r}
+m = mean(ex$survey.exercise)
+l = length(ex$survey.exercise)
+j = sd(ex$survey.exercise)
+c(m,l,j)
+```
+**Observed test statistic**:$$\frac{3.53 - 3.75}{2.39/\sqrt{182}} = -1.206$$
+```{r}
+n1 = length(ex$survey.exercise)
+t0 = (mean(ex$survey.exercise) - 3.75)/(sd(ex$survey.exercise)/sqrt(n1))
+t0
+```
+**P-value**:
+$$P(t_5 \leq -1.206) = 0.11$$
+```{r}
+pvalue = pt(t0, n - 1)
+t.test(ex$survey.exercise, mu = 3.75, alternative = "less")
+```
+**Decision**: The p-value is bigger than 0.05 which is 0.11, so the data is consistent with the null hypothesis $H_0$,it means the mean of sample size is equal to the mean of standard value, actually, we can see the Figure 3 that the blue dashed line of standard mean almost overlap with the mean of sample size. 
+
+# Specific Question 3
+## Hypothesis Test 3 - Does the student study for DATA2002 receive different amount of emails to student study for DATA2902?
+
+**Reason of testing**: I assume that student study in DATA2902 would receive more emails due to they have heavier amount of missions or assignments, or maybe have more emails of internship opportunity because the accepting their advanced strength.
+```{r fig.height= 3, fig.cap="Table 4: The mean and sd value of students receive emails in different unit."}
+em <- data.frame(survey$unit,survey$emails) %>% drop_na()
+em = subset(em,em$survey.emails < 30)
+data_2002 = filter(em, survey.unit == "DATA2002")
+data_2902 = filter(em, survey.unit == "DATA2902 (Advanced)")
+d2002 = data_2002$survey.emails
+d2902 = data_2902$survey.emails
+dat = data.frame(
+  email = c(d2002, d2902),
+  status = c(rep("DATA 2002",
+                 length(d2002)),
+             rep("DATA 2902",
+                 length(d2902))))
+library(dplyr)
+sum = dat %>%
+  group_by(status) %>%
+  summarise(Mean = mean(email),
+            SD = sd(email),
+            n = n())
+knitr::kable(sum, format = "html", digits = 1)
+```
+We can see more obviously differences in boxplot from Figure 4.1, to observe these two units, I thought it's better to use the two sample t-test to test if the population means of two different unit sample are different. Two samples are in different sample sizes, but it doesn't affect calculating the mean and variance values.
+```{r fig.height=4, fig.cap="Figure 4.1: the boxplot of comparative counts for receiving emails in two units "}
+library(ggplot2)
+ggplot(dat, aes(x = status, y = email)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.15, size = 1, colour = "#69b3a2") +
+  theme_bw(base_size = 15) +
+  labs(x = "", y = "Count of emails")
+```
+
+### Two Sample t-test
+The survey data is the one sample then I divide the one column names unit into two units are DATA2002 and DATA2902, it's more expedient of observing the student' emails in detail. We can use **two sample t-test** to test whether two units are dependent or independent.To be more specific, I removed the values which is more than 30 to reduce the deviation, if the outlier values are too far, it will influence the mean a lot.
+
+**Hypothesis**: 
+
+$H_0:$ the mean of emails in DATA2002 is equal to the mean in DATA2902.
+
+$H_1:$ the mean of emails in DATA2002 is bigger than DATA2902, or the mean of emails in DATA2002 is smaller than DATA2902, or the mean of emails in DATA2002 is not equal to DATA2902.
+
+**Assumptions**: $X_1$,$...$,$X_n$ are $iid$ $N(\mu_X,\sigma^2)$,$Y_1$,$...$,$Y_n$ are $iid$ $N(\mu_Y,\sigma^2)$, and $X_i$'s are independent of $Y_i$'s.
+
+**Test statistic**:$$T = \frac{\bar{X} - \bar{Y}}{S_p\sqrt{\frac{1}{n_1}+\frac{1}{n_2}}}$$ where $$S_p^2 = \frac{(n_x-1)S_x^2 + (n_y-1)S_y^2}{n_x+n_y-2}$$. Under $H_0$, $T \sim t_{n_x+n_y-2}$.
+We should calculate the mean of sample size and standard deviation at first, then we can use $t-test$ function to see the overall t0 and p-value in two samples.
+```{r}
+t.test(d2002, d2902, alternative = "two.sided",var.equal = TRUE)
+```
+**Observed test statistic**:$$t_0 = \frac{5.42 -7.39}{4.68\sqrt{\frac{1}{153}+\frac{1}{33}}}$$ where $$s_p^2 = \frac{(153-1)4.66^2 + (33-1)4.72^2}{153+33-2} = 4.68$$
+```{r}
+nS = length(d2002)
+nN = length(d2902)
+sS = sd(d2002)
+sN = sd(d2902)
+sP = sqrt(((nS - 1) * sS^2 + (nN - 1) * sN^2)/(nS + nN - 2))
+xbarS = mean(d2002)
+xbarN = mean(d2902)
+deg_free = nS+nN-2
+t0 = (xbarS - xbarN)/(sP * sqrt(1/nS + 1/nN))
+t0
+```
+**P-value**: $$2P(t20 ≥ |1.14|) = 0.03$$
+```{r}
+p_val = 2 * (1 - pt(abs(t0), deg_free))
+p_val
+```
+
+**Decision**: The p-value after calculating is less than 0.05 which is 0.03, so there is the evidence to against $H_0$ that the counts of email receiving in DATA2002 are different in DATA2902, and retain $H_1$ that the mean of emails in DATA2902 is more than the mean in DATA2002.
+
+**Limitation**: Due to there are some outlier values in the emails counts, thus this may les to bias in the sample data, then I removed these values to decreasing bias to the greatest extent, I just create the new dataframe which doedn't influence the original survey data or other question's data.
+
+# Conclusion and Reference
+## Conclusion
+In summary, from the survey data, we conclude that the student's COVID tests are not followed the Poisson distribution, for my own additional questions, the student study in different year doesn't influence the student's complexity of studying in DATA2002, these two variables are independent. Furthermore, gather the recommendation from Australian Department, it clearly shows students exercise hours achieve the standard amount of exercise. Also, the students study in different units receive the different amount of emails indeed, the emails in DATA2902 is more than the email in DATA2002. For some values in survey data are messy and hard to distinguish, but it's easier to process after data cleaning, the whole population is not the random sample, thus it may have some bias that influence the accuracy of results.
+
+## References
+
+- Alboukadel K (2020). ggpubr: 'ggplot2' Based Publication Ready Plots. R package version 0.4.0. https://CRAN.R-project.org/package=ggpubr
+- Beaudry J, Emily K, Felix T and Rhydwyn M (2020). gendercodeR: Recodes Sex/Gender Descriptions Into A Standard Set. R package version 0.0.0.9000. https://github.com/ropenscilabs/gendercoder
+- David R, Alex H and Simon C (2020). broom: Convert Statistical Objects into Tidy Tibbles. R package version 0.7.0.https://CRAN.R-project.org/package=broom
+- Firke S (2020). janitor: Simple Tools for Examining and Cleaning Dirty Data. R package version 2.0.1. https://CRAN.R-project.org/package=janitor
+- Gergely D and Roman T (2018). pander: An R 'Pandoc' Writer. R package version 0.6.3. https://CRAN.R-project.org/package=pander
+- Iannone R, Joe C and Barret S (2020). gt: Easily Create Presentation-Ready Display Tables. R package version 0.2.2. https://CRAN.R-project.org/package=gt
+- Khan Academy(2017). Examples of bias in surveys. Retrieved from https://www.khanacademy.org/math/ap-statistics/gathering-data-ap/sampling-observational-studies/v/examples-of-bias-in-surveys
+- R Core Team (2020). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. https://www.R-project.org/.
+- Tarr, G. (2020). DATA2002 class survey. Unpublished raw data. Retrieved from https://docs.google.com/spreadsheets/d/e/2PACX-1vTf8eDSN_2QbMTyVvO5bdYKZSEEF2bufDdYnLnL-TsR8LM-6x-xu1cxmDMohlbLrkMJn9DE7EG7pg5P/pub?gid=1724783278&single=true&output=csv
+- Tarr, G. (2020). DATA2002 class survey cleaning script (Computer Software). Retrieved from https://pages.github.sydney.edu.au/DATA2002/2020/assignment/survey_cleaning.Rmd
+- Tierney N (2017). "visdat: Visualising Whole Data Frames." _JOSS_, *2*(16), 355. doi: [10.21105/joss.00355](https://doi.org/10.21105/joss.00355)
+- Thomas L, Paula D, Scott E, Lu C (2002). The Importance of the Normality Assumption in Large Public Health Data Sets. Retrieved from https://www.annualreviews.org/doi/full/10.1146/annurev.publhealth.23.100901.140546
+- Waring E, Michael Quinn, Amelia McNamara, Eduardo Arino de la Rubia, Hao Zhu and Shannon Ellis (2020). skimr: Compact and Flexible Summaries of Data. R package version 2.1.2. https://CRAN.R-project.org/package=skimr
+- Wickham H et al., (2019). Welcome to the tidyverse. Journal of Open Source Software, 4(43), 1686, doi: [10.21105/joss.01686](https://doi.org/10.21105/joss.01686)
+- Yihui Xie (2020). knitr: A General-Purpose Package for Dynamic Report Generation
+  in R. R package version 1.29.
+- Australia's health 2018, physical inactivity. Australian Institute of Health and Welfare. (n.d.). Retrieved September 18, 2021, from https://www.aihw.gov.au/reports/australias-health/australias-health-2018/contents/indicators-of-australias-health/physical-inactivity. 
